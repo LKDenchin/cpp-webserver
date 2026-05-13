@@ -31,6 +31,7 @@ int main(){
         return 1;
     }
     
+
     // fmt::println("{}", addrinfo->ai_family); //打印地址族（IPv4/IPv6）
     // fmt::println("{}", addrinfo->ai_socktype); //打印套接字类型（TCP/UDP）
     // fmt::println("{}", addrinfo->ai_protocol); //打印协议类型 
@@ -96,6 +97,21 @@ int main(){
 
     close(client_fd);
     close(sockfd);
+
+    char buffer[1024];
+    while(true){
+        memset(buffer, 0, sizeof(buffer));
+        ssize_t bytes_recive = recv(client_fd, buffer, sizeof(buffer)-1, 0);
+        if (bytes_recive < 0){
+            fmt::println("链接失败 {}", strerror(errno));
+            break;
+        }
+        else if (bytes_recive==0){
+            fmt::println("已断开链接");
+            break;
+        }
+        
+    }
 
     return 0;
 }
