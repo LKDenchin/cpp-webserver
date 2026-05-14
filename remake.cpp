@@ -95,23 +95,27 @@ int main(){
     fmt::println("Port: {}", client_port);
     fmt::println("Socket: {}", client_fd);
 
-    close(client_fd);
-    close(sockfd);
-
     char buffer[1024];
     while(true){
         memset(buffer, 0, sizeof(buffer));
-        ssize_t bytes_recive = recv(client_fd, buffer, sizeof(buffer)-1, 0);
-        if (bytes_recive < 0){
+        ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer)-1, 0);
+        if (bytes_received < 0){
             fmt::println("链接失败 {}", strerror(errno));
             break;
         }
-        else if (bytes_recive==0){
+        else if (bytes_received==0){
             fmt::println("已断开链接");
             break;
         }
-        
+        fmt::println("收到消息：{}", buffer);
+        //回传数据
+        ssize_t bytes_sent = send(client_fd, buffer, bytes_received, 0);
+        if (bytes_sent<0){
+            fmt::println("发送失败: {}", strerror(errno));
+            break;
+        }
     }
-
+    close(client_fd);
+    close(sockfd);
     return 0;
 }
