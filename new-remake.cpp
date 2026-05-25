@@ -103,7 +103,7 @@ void set_nonblocking(int fd) {
 bool handle_client_message(int client_fd) {
     char buffer[1024];
         memset(buffer, 0, sizeof(buffer));
-        //非阻塞制度去当前缓冲区已有内容，读完立刻返回。
+        //非阻塞只读取当前缓冲区已有内容，读完立刻返回。
         ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer)-1, 0);
         if (bytes_received < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -172,14 +172,14 @@ int main() {
                     struct epoll_event client_ev;
                     client_ev.events = EPOLLIN;
                     client_ev.data.fd = client_fd;
-                    epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, &client_ev);
+                    epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, &client_ev); //登记新客户端
                 }
             }
             // 2.客户端套接字相应，新消息进入
             else {
                 if (!handle_client_message(current_fd)) {
-                    epoll_ctl(epfd, EPOLL_CTL_DEL, current_fd, nullptr);
-                    close(current_fd);
+                    epoll_ctl(epfd, EPOLL_CTL_DEL, current_fd, nullptr);//移除
+                    close(current_fd);//销毁套接字
                 }
             }
         }
