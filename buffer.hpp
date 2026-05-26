@@ -1,3 +1,4 @@
+#pragma once
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -33,7 +34,7 @@ public:
     }
     //处理完数据后删除
     void retrive(size_t len) {
-        if (len <= buffer_size()){
+        if (len <= buffer_.size()){
             buffer_.erase(0,len);//从0开始，删掉len个字符
         }
         else {

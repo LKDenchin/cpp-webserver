@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 #include <string.h> // strerror用到
+#include "buffer.hpp"
 
 // 初始化并启动服务器
 int create_server_socket(const char* ip, const char* port) {
