@@ -5,7 +5,7 @@
 #include <system_error>
 #include <fcntl.h>
 #include <array>
-#include <map>
+#include <map> //引入map字典
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -101,8 +101,7 @@ void set_nonblocking(int fd) {
 }
 
 // 处理客户端消息收发
-bool handle_client_message(int client_fd) {
-    Buffer buf;
+bool handle_client_message(int client_fd, Buffer& buf) {
     int saved_errno = 0;
     //读取套接字数据
     ssize_t bytes_received = buf.read_fd(client_fd, &saved_errno);
@@ -117,15 +116,29 @@ bool handle_client_message(int client_fd) {
         fmt::println("套接字 {} 已断开连接", client_fd);
         return false;
     }
-    //打印收到的信息，通过buf.data()获取字符串内容
-    fmt::println("收到消息：[socket: {}]: {}", client_fd, buf.data());
-    //回传数据：使用buf.data()发送，长度为buf.size()
-    ssize_t bytes_sent = send(client_fd, buf.data(), buf.size(), 0);
-    if (bytes_sent < 0) {
-        fmt::println("套接字 {} 发送失败：{}",client_fd, strerror(errno));
-        return false;
+    //切分数据
+    while(true) {
+        std::string view(buf.data(), buf,size());
+        //查询换行符
+        size_t pos = view.find('\n');
+        //1.未找到->半包数据
+        if (pos == std::string::npos) {
+            break;//不清空直接退出，保留数据在buf内
+        }
+        //2.找到换行符
+        std::string single_message = view.substr(0, pos);
+        //打印
+        fmt::println("切分消息: [socket: {} ] {}", client_fd, single_message);
+            //回传数据
+        std::string reply = single_message + "\n";
+        ssize_t bytes_sent = send(client_fd, reply.data(), reply.size(), 0);
+        if (bytes_sent < 0) {
+            fmt::println("套接字 {} 发送失败: {}", client_fd, strerror(errno));
+            return false;
+        }
+        //清理处理完的数据，记得\n也要占位，所以需要删掉pos+1的数据
+        buf.retrive(pos + 1);
     }
-    buf.retrive_all();
     return true;
 }
 
