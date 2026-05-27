@@ -102,30 +102,31 @@ void set_nonblocking(int fd) {
 
 // 处理客户端消息收发
 bool handle_client_message(int client_fd) {
-    char buffer[1024];
-        memset(buffer, 0, sizeof(buffer));
-        //非阻塞只读取当前缓冲区已有内容，读完立刻返回。
-        ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer)-1, 0);
-        if (bytes_received < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                return true; //1. 无数据可读不算报错，继续保持连接
-            }
-            fmt::println("套接字 {} 接受失败：{}", client_fd, strerror(errno));
-            return false; // 此时发生错误
+    Buffer buf;
+    int saved_errno = 0;
+    //读取套接字数据
+    ssize_t bytes_received = buf.read_fd(client_fd, &saved_errno);
+    if (bytes_received < 0) {
+        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
+            return true; //无数据可读，不是报错，继续保持连接
         }
-        else if (bytes_received == 0) {
-            fmt::println("套接字 {} 已断开链接", client_fd);
-            return false; //客户端主动断开连接
-        }
-        fmt::println("收到消息：[socket {}]: {}", client_fd, buffer);
-        
-        // 回传数据
-        ssize_t bytes_sent = send(client_fd, buffer, bytes_received, 0);
-        if (bytes_sent < 0) {
-            fmt::println("套接字 {} 发送失败: {}", client_fd, strerror(errno));
-            return false;
-        }
-        return true;
+        fmt::println("套接字 {} 接受失败 {}", client_fd, strerror(saved_errno));
+        return false;
+    }
+    else if (bytes_received == 0) {
+        fmt::println("套接字 {} 已断开连接", client_fd);
+        return false;
+    }
+    //打印收到的信息，通过buf.data()获取字符串内容
+    fmt::println("收到消息：[socket: {}]: {}", client_fd, buf.data());
+    //回传数据：使用buf.data()发送，长度为buf.size()
+    ssize_t bytes_sent = send(client_fd, buf.data(), buf.size(), 0);
+    if (bytes_sent < 0) {
+        fmt::println("套接字 {} 发送失败：{}",client_fd, strerror(errno));
+        return false;
+    }
+    buf.retrive_all();
+    return true;
 }
 
 int main() {
