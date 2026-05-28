@@ -118,7 +118,7 @@ bool handle_client_message(int client_fd, Buffer& buf) {
     }
     //切分数据
     while(true) {
-        std::string view(buf.data(), buf,size());
+        std::string view(buf.data(), buf.size());
         //查询换行符
         size_t pos = view.find('\n');
         //1.未找到->半包数据
@@ -166,6 +166,7 @@ int main() {
     //创建数组接受活跃事件
     const int MAX_EVENTS = 1024;
     struct epoll_event events[MAX_EVENTS];
+    std::map<int, Buffer> client_buffers; //声明map
 
     //阻塞循环
     while (true) {
@@ -187,13 +188,15 @@ int main() {
                     struct epoll_event client_ev;
                     client_ev.events = EPOLLIN;
                     client_ev.data.fd = client_fd;
+                    client_buffers[client_fd];
                     epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, &client_ev); //登记新客户端
                 }
             }
             // 2.客户端套接字相应，新消息进入
             else {
-                if (!handle_client_message(current_fd)) {
+                if (!handle_client_message(current_fd, client_buffers[current_fd])) {
                     epoll_ctl(epfd, EPOLL_CTL_DEL, current_fd, nullptr);//移除
+                    client_buffers.erase(current_fd);
                     close(current_fd);//销毁套接字
                 }
             }
