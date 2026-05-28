@@ -120,24 +120,42 @@ bool handle_client_message(int client_fd, Buffer& buf) {
     while(true) {
         std::string view(buf.data(), buf.size());
         //查询换行符
-        size_t pos = view.find('\n');
+        size_t pos = view.find("\r\n\r\n");
         //1.未找到->半包数据
         if (pos == std::string::npos) {
             break;//不清空直接退出，保留数据在buf内
         }
-        //2.找到换行符
-        std::string single_message = view.substr(0, pos);
-        //打印
-        fmt::println("切分消息: [socket: {} ] {}", client_fd, single_message);
-            //回传数据
-        std::string reply = single_message + "\n";
-        ssize_t bytes_sent = send(client_fd, reply.data(), reply.size(), 0);
+        // 成功提取出一个完整的 HTTP 请求头
+        std::string request_header = view.substr(0, pos);
+        fmt::println("收到 HTTP 请求:\n{}", request_header);
+        // 构造 HTTP 响应报文
+        // 1. 准备要在浏览器里显示的 HTML 内容
+        std::string body = "<html><head><title>Web Server</title></head>"
+                           "<body style='font-family: Arial, sans-serif; text-align: center; margin-top: 50px;'>"
+                           "<h1>Welcome to LKDenchin's Web Server!</h1>"
+                           "<p>如果你能看到这个页面，说明解析成功了！</p>"
+                           "</body></html>";
+        
+        // 2. 组装 HTTP 报文格式
+        std::string response = "HTTP/1.1 200 OK\r\n"
+                               "Content-Type: text/html; charset=utf-8\r\n"
+                               "Content-Length: " + std::to_string(body.size()) + "\r\n"
+                               "Connection: close\r\n"  // 让浏览器请求完就断开连接（短连接）
+                               "\r\n"                   // 头部和主体之间的空行
+                               + body;
+
+        // 3. 发送给浏览器
+        ssize_t bytes_sent = send(client_fd, response.data(), response.size(), 0);
         if (bytes_sent < 0) {
             fmt::println("套接字 {} 发送失败: {}", client_fd, strerror(errno));
             return false;
         }
-        //清理处理完的数据，记得\n也要占位，所以需要删掉pos+1的数据
-        buf.retrive(pos + 1);
+
+        // 清理水桶中已处理的数据。\r\n\r\n 一共占据了 4 个字节，所以要删掉 pos + 4
+        buf.retrive(pos + 4);
+
+        // 对于简单的短连接 HTTP，发完响应就主动关闭连接
+        return false; 
     }
     return true;
 }
