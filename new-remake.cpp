@@ -17,7 +17,9 @@
 #include <utility>
 #include <vector>
 #include <string.h> // strerror用到
+#include <memory>
 #include "buffer.hpp"
+#include "channel.hpp"
 
 // 初始化并启动服务器
 int create_server_socket(const char* ip, const char* port) {
@@ -175,17 +177,46 @@ int main() {
         fmt::println("epoll_create1 失败");
         return 1;
     }
+    Channel server_channel(sockfd);
+    server_channel.enableReading(); // 开启监听读事件
     // 监听套接字加入epoll
     struct epoll_event ev;
-    ev.events = EPOLLIN;
-    ev.data.fd = sockfd;
+    ev.events = server_channel.events();
+    ev.data.ptr = &server_channel; // 将Channel对象的地址存储在事件数据中,不再存fd
     epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &ev);
 
     //创建数组接受活跃事件
     const int MAX_EVENTS = 1024;
     struct epoll_event events[MAX_EVENTS];
     std::map<int, Buffer> client_buffers; //声明map
+    std::map<int, std::unique_ptr<Channel>> client_channels; //存储客户端的Channel对象
+    std::vector<int> channels_to_delete; //存储需要删除的Channel对象的fd
 
+    server_channel.setReadCallback([&](){
+        int client_fd = accept_client(sockfd);
+        if (client_fd != -1){
+            set_nonblocking(client_fd);
+            //新客户端单独buffer
+            client_buffers[client_fd];
+            //创建channel
+            auto client_chan = std::make_unique<Channel>(client_fd);
+            client_chan->enableReading();
+            //channel可读回调
+            client_chan->setReadCallback([client_fd, epfd, &client_buffers, &channels_to_delete](){
+                //返回false,延迟销毁
+                if (!handle_client_message(client_fd, client_buffers[client_fd])){
+                    channels_to_delete.push_back(client_fd);//先不销毁
+                }
+            });
+
+            struct epoll_event client_ev;
+            client_ev.events = client_chan->events();
+            client_ev.data.ptr = client_chan.get();//存channel裸指针 
+            epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, &client_ev);
+
+            client_channels[client_fd] = std::move(client_chan);//由unique_ptr移入map
+        }
+    });
     //阻塞循环
     while (true) {
         //在此处阻塞，直到有新事件发生
@@ -194,31 +225,21 @@ int main() {
             fmt::println("epoll_wait 错误：{}", strerror(errno));
             break;
         }
-        for (int i=0;i<nfds;i++){
-            int current_fd = events[i].data.fd;
-            // 1.server套接字响应，新客户端进入
-            if (current_fd == sockfd){
-                int client_fd = accept_client(sockfd);
-                if (client_fd != -1) {
-                    set_nonblocking(client_fd);
-
-                    //客户端加入监听名单
-                    struct epoll_event client_ev;
-                    client_ev.events = EPOLLIN;
-                    client_ev.data.fd = client_fd;
-                    client_buffers[client_fd];
-                    epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, &client_ev); //登记新客户端
-                }
-            }
-            // 2.客户端套接字相应，新消息进入
-            else {
-                if (!handle_client_message(current_fd, client_buffers[current_fd])) {
-                    epoll_ctl(epfd, EPOLL_CTL_DEL, current_fd, nullptr);//移除
-                    client_buffers.erase(current_fd);
-                    close(current_fd);//销毁套接字
-                }
-            }
+        //分发事件：直接取出 Channel 指针，调用 handleEvent()
+        for (int i = 0; i < nfds; i++) {
+            Channel* channel = static_cast<Channel*>(events[i].data.ptr);
+            channel->set_revents(events[i].events);
+            channel->handleEvent();         // Channel 自己调用绑定的回调
         }
+        //安全清理已断开的连接（在所有事件处理完之后）
+        for (int fd : channels_to_delete) {
+            epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);   // 从 epoll 移除
+            client_buffers.erase(fd);                       // 释放缓冲区
+            client_channels.erase(fd);
+            close(fd);                                      // 关闭套接字
+            fmt::println("套接字 {} 的资源已安全清理销毁", fd);
+        }
+        channels_to_delete.clear();
     }
     // 4. 清理资源
     close(sockfd);

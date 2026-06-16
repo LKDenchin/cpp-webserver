@@ -28,7 +28,7 @@ public:
     void setReadCallback(std::function<void()> cb) { readCallback_ = cb; }
     void setWriteCallback(std::function<void()> cb) { writeCallback_ = cb;}
     //开启读事件监听（EPOLLIN）
-    void enanleReading() {
+    void enableReading() {
         events_ |= EPOLLIN;
     }
     void handleEvent() {
